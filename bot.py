@@ -3,7 +3,7 @@ import logging
 import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiohttp import web
 from dotenv import load_dotenv
 import ccxt
@@ -31,13 +31,31 @@ def get_mexc_exchange():
         'enableRateLimit': True,
     })
 
-# ---------- Все ваши обработчики команд остаются без изменений ----------
+# ---------- Главное меню с кнопками ----------
+def get_main_keyboard():
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💰 Цена")],
+            [KeyboardButton(text="📊 Баланс")]
+        ],
+        resize_keyboard=True
+    )
+    return keyboard
+
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer(
         "🤖 Привет! Я торговый помощник для MEXC.\n\n"
-        "📊 /price BTCUSDT - получить цену с кнопками\n"
-        "💰 /balance - проверить баланс USDT"
+        "Выберите действие в меню ниже:",
+        reply_markup=get_main_keyboard()
+    )
+
+@dp.message(F.text == "💰 Цена")
+async def price_button_handler(message: types.Message):
+    await message.answer(
+        "Введите валютную пару для получения цены.\n"
+        "Пример: BTCUSDT или просто BTC",
+        reply_markup=get_main_keyboard()
     )
 
 @dp.message(Command("price"))
@@ -62,6 +80,29 @@ async def price_command(message: types.Message):
     except Exception as e:
         await message.answer(f"❌ Ошибка при получении цены: {e}")
 
+@dp.message()
+async def handle_symbol_input(message: types.Message):
+    # Обработка ввода валютной пары
+    text = message.text.strip().upper()
+    if text in ["💰 Цена", "📊 Баланс", "/start", "/price", "/balance"]:
+        return  # Пропускаем команды и кнопки меню
+    
+    # Проверяем, это похоже на валютную пару
+    if len(text) >= 3 and text.isalpha():
+        symbol = text if text.endswith('USDT') else text + 'USDT'
+        try:
+            exchange = get_mexc_exchange()
+            ticker = exchange.fetch_ticker(symbol)
+            price = ticker['last']
+
+            refresh_btn = InlineKeyboardButton(text="🔄 Обновить", callback_data=f"refresh_{symbol}")
+            chart_btn = InlineKeyboardButton(text="📈 График", callback_data=f"chart_{symbol}")
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[refresh_btn, chart_btn]])
+
+            await message.answer(f"💰 Цена {symbol}: {price:.4f} USDT", reply_markup=keyboard)
+        except Exception as e:
+            await message.answer(f"❌ Ошибка при получении цены для {symbol}: {e}")
+
 @dp.callback_query(F.data.startswith("refresh_"))
 async def refresh_price(callback: types.CallbackQuery):
     symbol = callback.data.split("_", 1)[1]
@@ -82,6 +123,16 @@ async def show_chart(callback: types.CallbackQuery):
     back_keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_btn]])
     await callback.message.edit_text(f"📈 График {symbol}:\n{chart_url}", reply_markup=back_keyboard)
     await callback.answer()
+
+@dp.message(F.text == "📊 Баланс")
+async def balance_button_handler(message: types.Message):
+    try:
+        exchange = get_mexc_exchange()
+        balance = exchange.fetch_balance()
+        usdt_balance = balance.get('USDT', {}).get('free', 0)
+        await message.answer(f"💰 Ваш баланс USDT на MEXC: {usdt_balance:.2f}", reply_markup=get_main_keyboard())
+    except Exception as e:
+        await message.answer(f"❌ Не удалось получить баланс: {e}", reply_markup=get_main_keyboard())
 
 @dp.message(Command("balance"))
 async def balance_command(message: types.Message):
