@@ -639,15 +639,32 @@ async def balance_command(message: types.Message):
     except Exception as e:
         await message.answer(f"❌ Не удалось получить баланс: {e}")
 
-# ---------- Запуск бота в режиме polling ----------
-async def main():
+# ---------- Настройка веб-сервера и webhook ----------
+async def on_startup(app: web.Application):
     init_db()
-    logging.info("Database initialized")
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info(f"Webhook set to {WEBHOOK_URL}")
     # Start trading loop in background
     asyncio.create_task(trading_loop())
     logging.info("Trading loop started")
-    # Start polling
-    await dp.start_polling(bot)
+
+async def on_cleanup(app: web.Application):
+    await bot.session.close()
+    logging.info("Bot session closed")
+
+async def handle_webhook(request: web.Request) -> web.Response:
+    update = types.Update(**await request.json())
+    await dp.feed_update(bot, update)
+    return web.Response()
+
+def run():
+    app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
+    app.router.add_post(WEBHOOK_PATH, handle_webhook)
+    app.router.add_get('/', lambda request: web.Response(text="MOHABOT777 is running"))
+    web.run_app(app, host='0.0.0.0', port=PORT)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    run()
