@@ -13,9 +13,11 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 MEXC_API_KEY = os.getenv('MEXC_API_KEY')
 MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY')
 PORT = int(os.environ.get('PORT', 8080))
-RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
+
+# БЕРЁМ URL ИЗ ПЕРЕМЕННОЙ, КОТОРУЮ МЫ ДОБАВИЛИ НА РЕНДЕРЕ!
+RENDER_EXTERNAL_URL = os.getenv('RENDER_EXTERNAL_URL')
 WEBHOOK_PATH = f'/webhook/{BOT_TOKEN}'
-WEBHOOK_URL = f'https://{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}'
+WEBHOOK_URL = f'{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}'
 
 logging.basicConfig(level=logging.INFO)
 
@@ -29,7 +31,7 @@ def get_mexc_exchange():
         'enableRateLimit': True,
     })
 
-# ---------- Обработчики команд ----------
+# ---------- Все ваши обработчики команд остаются без изменений ----------
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer(
