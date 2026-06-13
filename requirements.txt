@@ -2,3 +2,5 @@ aiogram
 python-dotenv
 ccxt
 Flask
+uvicorn
+starlette

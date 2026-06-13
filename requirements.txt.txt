@@ -1,4 +1,0 @@
-aiogram
-python-dotenv
-ccxt
-Flask
