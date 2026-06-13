@@ -255,8 +255,9 @@ def get_main_keyboard():
 
 def get_dashboard_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚙️ Настройки бота", callback_data="settings")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="statistics_page")],
         [InlineKeyboardButton(text="📜 История сделок", callback_data="history")],
+        [InlineKeyboardButton(text="⚙️ Настройки бота", callback_data="settings")],
         [InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_dashboard")]
     ])
     return keyboard
@@ -326,32 +327,44 @@ async def show_dashboard(message):
     except:
         usdt_balance = 0
     
-    status = "🟢 Активен" if settings['bot_active'] else "🔴 Остановлен"
+    status_text = "⏳ Ждет сигнал" if not settings['bot_active'] else "� Активен"
+    pnl_color = "🟢" if stats['total_pnl'] >= 0 else "🔴"
+    roi_color = "🟢" if stats['avg_roi'] >= 0 else "🔴"
     
-    text = f"""🤖 **Trading Bot**
+    # Calculate profitable trades percentage
+    if stats['total_trades'] > 0:
+        profitable_percent = 100  # Placeholder - would need actual profitable count
+    else:
+        profitable_percent = 0
+    
+    text = f"""🤖 <b>Trading Bot</b>
 
-💰 **ОБЩИЙ БАЛАНС**
-${usdt_balance:.2f} USDT
+💰 <b>ОБЩИЙ БАЛАНС</b>
+<code>${usdt_balance:.2f} USDT</code>
 
-📊 **СТАТИСТИКА**
-{status}
-PNL: {stats['total_pnl']:+.2f} USDT
-ROI: {stats['avg_roi']:+.2f}%
-Сделок: {stats['total_trades']}
+⏳ <b>СТАТУС</b>
+{status_text}
 
-⚙️ **ТЕКУЩИЕ НАСТРОЙКИ**
-Режим: {settings['mode']}
-Пара: {settings['trading_pair']}
-Позиция: {settings['position']}
-Депозит: {settings['deposit']} USDT
-Плечо: {settings['leverage']}x
+📊 <b>СТАТИСТИКА</b>
+━━━━━━━━━━━━━━━━━
+{pnl_color} PNL: <code>{stats['total_pnl']:+.2f} USDT</code>
+{roi_color} ROI: <code>{stats['avg_roi']:+.2f}%</code>
+📈 Сделок: <code>{stats['total_trades']}</code>
+
+⚙️ <b>ТЕКУЩИЕ НАСТРОЙКИ</b>
+━━━━━━━━━━━━━━━━━
+🚀 Режим: <code>{settings['mode']}</code>
+💱 Пара: <code>{settings['trading_pair']}</code>
+📈 Позиция: <code>{settings['position']}</code>
+💵 Депозит: <code>{settings['deposit']} USDT</code>
+⚡ Плечо: <code>{settings['leverage']}x</code>
 """
     
     if isinstance(message, types.CallbackQuery):
-        await message.message.edit_text(text, reply_markup=get_dashboard_keyboard(), parse_mode="Markdown")
+        await message.message.edit_text(text, reply_markup=get_dashboard_keyboard(), parse_mode="HTML")
         await message.answer()
     else:
-        await message.answer(text, reply_markup=get_dashboard_keyboard(), parse_mode="Markdown")
+        await message.answer(text, reply_markup=get_dashboard_keyboard(), parse_mode="HTML")
 
 @dp.message(F.text == "📊 Статистика")
 async def statistics_button_handler(message: types.Message):
@@ -442,24 +455,95 @@ async def exit_selected_callback(callback: types.CallbackQuery):
     update_user_setting(callback.from_user.id, "exit_type", exit_type)
     await show_settings(callback)
 
-@dp.callback_query(F.data == "history")
-async def history_callback(callback: types.CallbackQuery):
-    trades = get_user_trades(callback.from_user.id, limit=10)
+@dp.callback_query(F.data == "statistics_page")
+async def statistics_page_callback(callback: types.CallbackQuery):
+    stats = get_user_stats(callback.from_user.id)
+    settings = get_user_settings(callback.from_user.id)
     
-    if not trades:
-        text = "📜 **История сделок пуста**"
-    else:
-        text = "📜 **История сделок:**\n\n"
+    status_text = "⏳ Ждет сигнал" if not settings['bot_active'] else "🟢 Активен"
+    pnl_color = "🟢" if stats['total_pnl'] >= 0 else "🔴"
+    roi_color = "🟢" if stats['avg_roi'] >= 0 else "🔴"
+    
+    trades = get_user_trades(callback.from_user.id, limit=5)
+    profitable_count = sum(1 for t in trades if t[2] > 0) if trades else 0
+    total_count = len(trades) if trades else 0
+    
+    text = f"""🤖 <b>Trading Bot</b>
+
+⏳ <b>СТАТУС</b>
+{status_text}
+
+📊 <b>СТАТИСТИКА</b>
+━━━━━━━━━━━━━━━━━
+{pnl_color} <b>PNL</b>
+<code>{stats['total_pnl']:+.2f} USDT</code>
+
+{roi_color} <b>ROI</b>
+<code>{stats['avg_roi']:+.2f}%</code>
+
+📈 <b>Сделок</b>
+<code>{stats['total_trades']}</code>
+
+📜 <b>ПОСЛЕДНИЕ СДЕЛКИ</b>
+━━━━━━━━━━━━━━━━━
+✅ {profitable_count} из {total_count} прибыльных
+
+"""
+    
+    if trades:
         for trade in trades:
             symbol, position, pnl, roi, timestamp = trade
             pnl_emoji = "🟢" if pnl > 0 else "🔴"
-            text += f"{pnl_emoji} {symbol} {position}\n"
-            text += f"   PNL: {pnl:+.2f} USDT | ROI: {roi:+.2f}%\n"
-            text += f"   {timestamp}\n\n"
+            position_emoji = "📈" if position == "LONG" else "📉"
+            
+            text += f"{pnl_emoji} <b>{symbol}</b> {position_emoji} {position}\n"
+            text += f"   PNL: <code>{pnl:+.2f} USDT</code> | ROI: <code>{roi:+.2f}%</code>\n"
+            text += f"   📅 {timestamp}\n\n"
+    else:
+        text += "📭 Пока нет сделок\n\n"
+    
+    back_btn = InlineKeyboardButton(text="◀️ Назад", callback_data="refresh_dashboard")
+    history_btn = InlineKeyboardButton(text="📜 Вся история", callback_data="history")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[history_btn], [back_btn]])
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    await callback.answer()
+
+@dp.callback_query(F.data == "history")
+async def history_callback(callback: types.CallbackQuery):
+    trades = get_user_trades(callback.from_user.id, limit=10)
+    stats = get_user_stats(callback.from_user.id)
+    
+    if not trades:
+        text = """🤖 <b>Trading Bot</b>
+
+� <b>ИСТОРИЯ СДЕЛОК</b>
+━━━━━━━━━━━━━━━━━
+📭 История сделок пуста
+
+Начните торговлю чтобы увидеть историю здесь."""
+    else:
+        profitable_count = sum(1 for t in trades if t[2] > 0)
+        total_count = len(trades)
+        
+        text = f"""🤖 <b>Trading Bot</b>
+
+� <b>ИСТОРИЯ СДЕЛОК</b>
+━━━━━━━━━━━━━━━━━
+✅ {profitable_count} из {total_count} прибыльных
+
+"""
+        for trade in trades:
+            symbol, position, pnl, roi, timestamp = trade
+            pnl_emoji = "🟢" if pnl > 0 else "🔴"
+            position_emoji = "📈" if position == "LONG" else "📉"
+            
+            text += f"{pnl_emoji} <b>{symbol}</b> {position_emoji} {position}\n"
+            text += f"   PNL: <code>{pnl:+.2f} USDT</code> | ROI: <code>{roi:+.2f}%</code>\n"
+            text += f"   📅 Закрыто: {timestamp}\n\n"
     
     back_btn = InlineKeyboardButton(text="◀️ Назад", callback_data="refresh_dashboard")
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_btn]])
-    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     await callback.answer()
 
 @dp.callback_query(F.data == "start_bot")
