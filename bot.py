@@ -642,6 +642,7 @@ async def balance_command(message: types.Message):
 # ---------- Настройка веб-сервера и webhook ----------
 async def on_startup(app: web.Application):
     init_db()
+    # Delete old webhook to avoid conflict
     await bot.delete_webhook(drop_pending_updates=True)
     await bot.set_webhook(WEBHOOK_URL)
     logging.info(f"Webhook set to {WEBHOOK_URL}")
