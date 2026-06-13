@@ -1,11 +1,9 @@
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
 from dotenv import load_dotenv
 import ccxt
@@ -15,8 +13,9 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 MEXC_API_KEY = os.getenv('MEXC_API_KEY')
 MEXC_SECRET_KEY = os.getenv('MEXC_SECRET_KEY')
 PORT = int(os.environ.get('PORT', 8080))
+RENDER_EXTERNAL_URL = os.environ.get('RENDER_EXTERNAL_URL')
 WEBHOOK_PATH = f'/webhook/{BOT_TOKEN}'
-WEBHOOK_URL = f'https://{os.environ.get("RENDER_EXTERNAL_URL")}{WEBHOOK_PATH}'
+WEBHOOK_URL = f'https://{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}'
 
 logging.basicConfig(level=logging.INFO)
 
@@ -30,7 +29,7 @@ def get_mexc_exchange():
         'enableRateLimit': True,
     })
 
-# ---------- Обработчики команд (такие же, как и были) ----------
+# ---------- Обработчики команд ----------
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     await message.answer(
@@ -45,11 +44,9 @@ async def price_command(message: types.Message):
     if len(args) < 2:
         await message.answer("❌ Укажите валютную пару. Пример: /price BTCUSDT")
         return
-
     symbol = args[1].upper()
     if not symbol.endswith('USDT'):
         symbol += 'USDT'
-
     try:
         exchange = get_mexc_exchange()
         ticker = exchange.fetch_ticker(symbol)
@@ -94,27 +91,25 @@ async def balance_command(message: types.Message):
     except Exception as e:
         await message.answer(f"❌ Не удалось получить баланс: {e}")
 
-# ---------- Настройка Webhook ----------
-async def on_startup():
+# ---------- Настройка веб-сервера и webhook ----------
+async def on_startup(app: web.Application):
     await bot.set_webhook(WEBHOOK_URL)
+    logging.info(f"Webhook set to {WEBHOOK_URL}")
 
-@asynccontextmanager
-async def lifespan(app: web.Application):
-    await on_startup()
-    yield
+async def on_cleanup(app: web.Application):
     await bot.session.close()
+    logging.info("Bot session closed")
 
 async def handle_webhook(request: web.Request) -> web.Response:
-    """Обработчик входящих запросов от Telegram."""
     update = types.Update(**await request.json())
     await dp.feed_update(bot, update)
     return web.Response()
 
-# ---------- Запуск ----------
 def run():
-    app = web.Application(lifespan=lifespan)
+    app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_cleanup.append(on_cleanup)
     app.router.add_post(WEBHOOK_PATH, handle_webhook)
-    # Добавим простой обработчик для корня, чтобы избежать ошибок при проверке здоровья
     app.router.add_get('/', lambda request: web.Response(text="MOHABOT777 is running"))
     web.run_app(app, host='0.0.0.0', port=PORT)
 
